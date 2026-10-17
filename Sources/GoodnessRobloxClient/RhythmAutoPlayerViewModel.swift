@@ -12,6 +12,7 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
     @Published var selectedSourceID = ""
 
     @Published var hueDegrees = 307.0
+    @Published var detectionMode: RhythmNoteDetectionMode = .hybrid
     @Published var hueTolerance = 34.0
     @Published var minimumSaturation = 0.44
     @Published var leadPixels = 12.0
@@ -53,7 +54,8 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
             toleranceDegrees: hueTolerance,
             minimumSaturation: minimumSaturation,
             scanDepth: 0.30,
-            leadPixels: leadPixels
+            leadPixels: leadPixels,
+            detectionMode: detectionMode
         )
     }
 
