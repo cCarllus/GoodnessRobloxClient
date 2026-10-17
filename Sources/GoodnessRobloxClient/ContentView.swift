@@ -2,7 +2,14 @@ import SwiftUI
 import GoodnessRobloxClientCore
 
 struct ContentView: View {
+    private enum ClientSection {
+        case pianoSheets
+        case rhythmAutoPlayer
+    }
+
     @StateObject private var player = PlayerViewModel()
+    @StateObject private var rhythm = RhythmAutoPlayerViewModel()
+    @State private var selectedSection: ClientSection = .pianoSheets
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,7 +19,11 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 sidebar
                 Divider()
-                pianoSheetsScreen
+                if selectedSection == .pianoSheets {
+                    pianoSheetsScreen
+                } else {
+                    RhythmAutoPlayerView(model: rhythm)
+                }
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -36,7 +47,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Goodness Roblox Client")
                     .font(.title2.weight(.semibold))
-                Text("Client local para automacao de Piano Sheets no macOS")
+                Text("Piano Sheets e Rhythm Auto Player para Roblox no macOS")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -55,12 +66,8 @@ struct ContentView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Label("Piano Sheets", systemImage: "pianokeys")
-                .font(.callout.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+            sidebarButton("Piano Sheets", icon: "pianokeys", section: .pianoSheets)
+            sidebarButton("Rhythm Auto Player", icon: "waveform.path", section: .rhythmAutoPlayer)
 
             Label("Local Input", systemImage: "keyboard")
                 .font(.callout)
@@ -97,6 +104,27 @@ struct ContentView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func sidebarButton(_ name: String, icon: String, section: ClientSection) -> some View {
+        Button {
+            if section == .pianoSheets {
+                rhythm.stop()
+            }
+            selectedSection = section
+        } label: {
+            Label(name, systemImage: icon)
+                .font(.callout.weight(selectedSection == section ? .semibold : .regular))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    selectedSection == section ? Color.accentColor.opacity(0.16) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var pianoSheetsScreen: some View {
