@@ -20,6 +20,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Capturar a janela do Roblox para reconhecer notas musicais e sincronizar teclas com permissao do usuario.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>
