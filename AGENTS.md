@@ -43,7 +43,19 @@ If generated files appear under `.build/` or `dist/`, leave them untracked.
 
 ## UX Rules
 
-- Keep the main screen centered on `Piano Sheets`.
+- The sidebar must expose **Piano Sheets** and **Rhythm Auto Player** as independent sections; never merge them into one view.
+- Keep the Piano Sheets screen and sheet playback behavior unchanged by rhythm changes.
 - Controls should be visible and direct: play, pause, stop, timing, hold duration, and delay.
-- Avoid adding unrelated client features until there is a concrete feature request.
+- Rhythm vision uses ScreenCaptureKit, a configurable capture source, and independent screen-to-key calibration. Keep captures and keyboard output visible, voluntary, and stoppable.
+- Avoid adding unrelated features until there is a concrete feature request.
 - Text should stay short and clear in Portuguese.
+
+## Rhythm Auto Player
+
+- RhythmVisionDetector is a pure-Foundation, per-frame BGRA note and motion detector in Core.
+- RhythmCaptureService owns ScreenCaptureKit and its dedicated serial video processing queue.
+- RhythmAutoPlayerViewModel owns the settings, instrument, permissions, and keyboard dispatch via KeyboardSimulator.
+- RhythmAutoPlayerView owns live preview, status, and click calibration.
+- Screen recording requires explicit macOS permission. Do not send keystrokes to non-Roblox applications.
+- Calibrations use normalized screen coordinates and are stored separately for each instrument.
+- Test detector logic with synthetic frames; don't claim live gameplay has been validated until tested on a Mac.

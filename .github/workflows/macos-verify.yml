@@ -1,0 +1,28 @@
+name: macOS Build and Smoke Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile and run smoke tests
+        run: scripts/verify.sh
+      - name: Package macOS app
+        run: |
+          scripts/package_app.sh
+          ditto -c -k --keepParent "dist/Goodness Roblox Client.app" "dist/GoodnessRobloxClient-macOS.zip"
+      - name: Upload test app
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoodnessRobloxClient-macOS
+          path: dist/GoodnessRobloxClient-macOS.zip
+          if-no-files-found: error
