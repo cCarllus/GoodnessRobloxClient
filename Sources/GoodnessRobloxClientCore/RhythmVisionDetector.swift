@@ -11,6 +11,30 @@ public struct RhythmLane: Codable, Equatable {
         self.x = x
         self.y = y
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case key, x, y
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let keyString = try container.decode(String.self, forKey: .key)
+        guard keyString.count == 1, let first = keyString.first else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .key, in: container, debugDescription: "Tecla invalida"
+            )
+        }
+        key = first
+        x = try container.decode(Double.self, forKey: .x)
+        y = try container.decode(Double.self, forKey: .y)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(String(key), forKey: .key)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+    }
 }
 
 public enum RhythmInstrument: String, CaseIterable, Identifiable {
