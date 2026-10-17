@@ -13,6 +13,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Compile and run smoke tests
         run: scripts/verify.sh
