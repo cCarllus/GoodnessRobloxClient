@@ -143,6 +143,25 @@ struct RhythmAutoPlayerView: View {
                     .font(.caption.monospacedDigit())
             }
 
+            HStack(spacing: 12) {
+                Button {
+                    model.testKeysAfterDelay()
+                } label: {
+                    Label("Testar teclas (3s)", systemImage: "keyboard")
+                }
+                .disabled(model.isTestingKeys)
+
+                Text(model.robloxFocused ? "Roblox em primeiro plano" : "Roblox não está em primeiro plano")
+                    .font(.caption)
+                    .foregroundStyle(model.robloxFocused ? Color.green : Color.orange)
+
+                Spacer()
+                Text("Capturas: \(model.capturedUpdates)")
+                    .font(.caption.monospacedDigit())
+                Text("Última: \(model.lastKeysPressed)")
+                    .font(.caption.monospacedDigit())
+            }
+
             Text(model.statusMessage)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -159,7 +178,14 @@ struct RhythmAutoPlayerView: View {
                     .font(.headline)
                 Spacer()
                 if model.calibrationIndex == nil {
-                    Button("Calibrar centros das teclas") { model.startCalibration() }
+                    Button {
+                        model.autoCalibrate()
+                    } label: {
+                        Label("Localizar receptores", systemImage: "viewfinder")
+                    }
+                    .disabled(!model.isRunning || model.isCalibratingAutomatically)
+
+                    Button("Calibrar manualmente") { model.startCalibration() }
                         .disabled(model.previewImage == nil)
                 } else {
                     Button("Cancelar calibração") { model.cancelCalibration() }
@@ -175,7 +201,7 @@ struct RhythmAutoPlayerView: View {
                 .background(.black, in: RoundedRectangle(cornerRadius: 8))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            Text("Os círculos marcados indicam onde cada nota deve chegar. Inicie a captura e clique no centro dos receptores X/C/N/M ou F/J, na ordem.")
+            Text("O aplicativo tenta localizar os círculos coloridos automaticamente. Se não conseguir, use a calibração manual e clique nos centros das teclas X/C/N/M ou F/J, na ordem.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -252,6 +278,8 @@ struct RhythmAutoPlayerView: View {
             Label("Detecção e sincronização", systemImage: "slider.horizontal.3")
                 .font(.headline)
 
+            Toggle("Localizar receptores automaticamente ao iniciar", isOn: $model.autoCalibrateOnStart)
+
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
                 settingSlider(
                     "Cor das notas (matiz)",
@@ -321,7 +349,7 @@ struct RhythmAutoPlayerView: View {
             Label("Permissões e uso", systemImage: "lock.shield")
                 .font(.headline)
 
-            Text("1. Autorize Gravação da Tela e Acessibilidade. 2. Escolha a janela Roblox. 3. Inicie e calibre cada receptor na prévia. 4. Foque o Roblox. O sistema toca apenas quando o Roblox está em primeiro plano.")
+            Text("1. Autorize Gravação da Tela e Acessibilidade. 2. Escolha a janela Roblox. 3. Inicie e aguarde a localização automática dos receptores (ou calibre manualmente). 4. Use Testar teclas e volte para o Roblox em até 3 segundos. 5. Inicie a música com o Roblox em primeiro plano.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
