@@ -16,3 +16,13 @@ jobs:
       - uses: actions/checkout@v5
       - name: Compile and run smoke tests
         run: scripts/verify.sh
+      - name: Package macOS app
+        run: |
+          scripts/package_app.sh
+          ditto -c -k --keepParent "dist/Goodness Roblox Client.app" "dist/GoodnessRobloxClient-macOS.zip"
+      - name: Upload test app
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoodnessRobloxClient-macOS
+          path: dist/GoodnessRobloxClient-macOS.zip
+          if-no-files-found: error
