@@ -95,3 +95,132 @@ for (index, y) in [190, 207, 224, 240, 253, 265, 279].enumerated() {
 expect(movingHits.sorted() == ["c", "x"], "notas moveis devem acionar ambas as faixas uma unica vez")
 
 print("RhythmVisionSmokeTest OK")
+
+
+// O mesmo HUD com 4 receptores coloridos do screenshot do Roblox.
+// Background laranja e interior escuro impedem que uma tela qualquer passe como receptor.
+let hudWidth = 679
+let hudHeight = 426
+let receiverPositions: [(x: Int, y: Int, rgb: (UInt8, UInt8, UInt8))] = [
+    (151, 241, (230, 114, 185)), // X rosa
+    (246, 241, (244, 201, 135)), // C amarelo
+    (341, 241, (84, 141, 94)),   // N verde
+    (436, 241, (91, 135, 184))   // M azul
+]
+
+func makeReceiverHUD() -> [UInt8] {
+    var buffer = [UInt8](repeating: 0, count: hudWidth * hudHeight * 4)
+    for y in 0..<hudHeight {
+        for x in 0..<hudWidth {
+            let offset = (y * hudWidth + x) * 4
+            buffer[offset] = 38
+            buffer[offset + 1] = 81
+            buffer[offset + 2] = 167
+            buffer[offset + 3] = 255
+        }
+    }
+
+    for receiver in receiverPositions {
+        for y in (receiver.y - 44)...(receiver.y + 44) {
+            for x in (receiver.x - 44)...(receiver.x + 44) {
+                let dx = x - receiver.x
+                let dy = y - receiver.y
+                let distanceSquared = dx * dx + dy * dy
+                let offset = (y * hudWidth + x) * 4
+                if distanceSquared <= 41 * 41 {
+                    buffer[offset] = 21
+                    buffer[offset + 1] = 21
+                    buffer[offset + 2] = 21
+                }
+                if distanceSquared >= 34 * 34 && distanceSquared <= 37 * 37 {
+                    buffer[offset] = receiver.rgb.2
+                    buffer[offset + 1] = receiver.rgb.1
+                    buffer[offset + 2] = receiver.rgb.0
+                }
+            }
+        }
+    }
+    return buffer
+}
+
+let receiverHUD = makeReceiverHUD()
+let located = receiverHUD.withUnsafeBufferPointer { pixels in
+    RhythmReceptorLocator.locate(
+        bgra: pixels.baseAddress!,
+        width: hudWidth,
+        height: hudHeight,
+        bytesPerRow: hudWidth * 4,
+        keys: ["x", "c", "n", "m"]
+    )
+}
+expect(located?.count == 4, "localizacao automatica dos quatro receptores")
+if let located {
+    for (actual, expected) in zip(located, receiverPositions) {
+        expect(abs(actual.x - Double(expected.x) / Double(hudWidth)) < 0.040, "eixo X do receptor")
+        expect(abs(actual.y - Double(expected.y) / Double(hudHeight)) < 0.045, "eixo Y do receptor")
+    }
+}
+
+let guitarLocated = receiverHUD.withUnsafeBufferPointer { pixels in
+    RhythmReceptorLocator.locate(
+        bgra: pixels.baseAddress!,
+        width: hudWidth,
+        height: hudHeight,
+        bytesPerRow: hudWidth * 4,
+        keys: ["f", "j"]
+    )
+}
+expect(guitarLocated?.count == 2, "localizacao dos dois receptores da guitarra")
+
+let noReceivers = [UInt8](repeating: 0, count: hudWidth * hudHeight * 4)
+let noneLocated = noReceivers.withUnsafeBufferPointer { pixels in
+    RhythmReceptorLocator.locate(
+        bgra: pixels.baseAddress!,
+        width: hudWidth,
+        height: hudHeight,
+        bytesPerRow: hudWidth * 4,
+        keys: ["x", "c", "n", "m"]
+    )
+}
+expect(noneLocated == nil, "imagem vazia nao possui receptores")
+
+func makeBlueNoteFrame(_ noteY: Int) -> [UInt8] {
+    var pixels = makeFrame(noteY: noteY)
+    for i in stride(from: 0, to: pixels.count, by: 4) {
+        if pixels[i] == 210 && pixels[i + 1] == 54 && pixels[i + 2] == 244 {
+            pixels[i] = 244
+            pixels[i + 1] = 162
+            pixels[i + 2] = 30
+        }
+    }
+    return pixels
+}
+
+func analyzeBlue(_ detector: RhythmVisionDetector, y: Int, time: TimeInterval, mode: RhythmNoteDetectionMode) -> RhythmFrameResult {
+    let pixels = makeBlueNoteFrame(y)
+    return pixels.withUnsafeBufferPointer { buffer in
+        detector.analyze(
+            bgra: buffer.baseAddress!,
+            width: frameWidth,
+            height: frameHeight,
+            bytesPerRow: frameWidth * 4,
+            time: time,
+            lanes: visionLanes,
+            settings: RhythmVisionSettings(detectionMode: mode)
+        )
+    }
+}
+
+let motionDetector = RhythmVisionDetector()
+var motionHits: [Character] = []
+for (index, y) in [190, 207, 224, 240, 253, 265, 279].enumerated() {
+    motionHits.append(contentsOf: analyzeBlue(
+        motionDetector,
+        y: y,
+        time: Double(index) * 0.04,
+        mode: .movement
+    ).triggeredKeys)
+}
+expect(motionHits.sorted() == ["c", "x"], "detectar notas em movimento independente da cor")
+
+print("RhythmReceptorAndMotionSmokeTest OK")
