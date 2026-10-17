@@ -21,6 +21,7 @@ struct RhythmAutoPlayerView: View {
         .onAppear { model.refreshSources() }
         .onDisappear { model.stop() }
         .onChange(of: model.hueDegrees) { _ in model.applySettings() }
+        .onChange(of: model.detectionMode) { _ in model.applySettings() }
         .onChange(of: model.hueTolerance) { _ in model.applySettings() }
         .onChange(of: model.minimumSaturation) { _ in model.applySettings() }
         .onChange(of: model.leadPixels) { _ in model.applySettings() }
@@ -279,6 +280,17 @@ struct RhythmAutoPlayerView: View {
                 .font(.headline)
 
             Toggle("Localizar receptores automaticamente ao iniciar", isOn: $model.autoCalibrateOnStart)
+
+            Picker("Reconhecimento de notas", selection: $model.detectionMode) {
+                ForEach(RhythmNoteDetectionMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text("Híbrido detecta cor e movimento. Use Movimento quando as notas não forem magenta; use Cor quando a cena estiver movimentada.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
                 settingSlider(
