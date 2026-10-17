@@ -12,10 +12,12 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
     @Published var selectedSourceID = ""
 
     @Published var hueDegrees = 307.0
+    @Published var detectionMode: RhythmNoteDetectionMode = .hybrid
     @Published var hueTolerance = 34.0
     @Published var minimumSaturation = 0.44
     @Published var leadPixels = 12.0
-    @Published var keyHoldMilliseconds = 45.0
+    @Published var keyHoldMilliseconds = 70.0
+    @Published var autoCalibrateOnStart = true
 
     @Published private(set) var previewImage: CGImage?
     @Published private(set) var calibrationIndex: Int?
@@ -25,6 +27,11 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
     @Published private(set) var statusMessage = "Escolha uma janela do Roblox ou a tela e calibre as teclas."
     @Published private(set) var visibleNotes = 0
     @Published private(set) var hits = 0
+    @Published private(set) var capturedUpdates = 0
+    @Published private(set) var lastKeysPressed = "-"
+    @Published private(set) var robloxFocused = false
+    @Published private(set) var isCalibratingAutomatically = false
+    @Published private(set) var isTestingKeys = false
     @Published private(set) var keyboardAuthorized = KeyboardSimulator.shared.hasAccessibilityPermission
 
     private let capture = RhythmCaptureService()
@@ -47,7 +54,8 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
             toleranceDegrees: hueTolerance,
             minimumSaturation: minimumSaturation,
             scanDepth: 0.30,
-            leadPixels: leadPixels
+            leadPixels: leadPixels,
+            detectionMode: detectionMode
         )
     }
 
@@ -86,6 +94,69 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
         guard !lanes.isEmpty else { return }
         calibrationIndex = 0
         statusMessage = calibrationInstruction
+    }
+
+    func autoCalibrate() {
+        guard isRunning, !isCalibratingAutomatically else {
+            if !isRunning {
+                statusMessage = "Inicie a captura antes de procurar os receptores automaticamente."
+            }
+            return
+        }
+        isCalibratingAutomatically = true
+        calibrationIndex = nil
+        statusMessage = "Procurando os círculos dos receptores na captura..."
+
+        let expectedKeys = lanes.map(\.key)
+        let currentSession = sessionID
+        capture.locateReceivers(keys: expectedKeys) { [weak self] found in
+            Task { @MainActor [weak self] in
+                guard let self, self.sessionID == currentSession else { return }
+                self.isCalibratingAutomatically = false
+                if let found, found.count == expectedKeys.count {
+                    self.lanes = found
+                    self.saveLanes()
+                    self.applySettings()
+                    self.statusMessage = "\(found.count) receptores localizados! Foque o Roblox e teste uma música."
+                } else {
+                    self.statusMessage = "Não encontrei o grupo de círculos. Use Calibrar e marque X/C/N/M ou F/J manualmente."
+                }
+            }
+        }
+    }
+
+    func testKeysAfterDelay() {
+        guard !isTestingKeys else { return }
+        keyboardAuthorized = KeyboardSimulator.shared.hasAccessibilityPermission
+        guard keyboardAuthorized else {
+            statusMessage = "Autorize Acessibilidade para testar as teclas."
+            return
+        }
+        isTestingKeys = true
+        statusMessage = "Teste de teclado em 3 segundos. Clique na janela do Roblox agora."
+        let expectedKeys = lanes.map(\.key)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+                for key in expectedKeys {
+                    try Task.checkCancellation()
+                    let name = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+                    guard name.localizedCaseInsensitiveContains("Roblox") else {
+                        statusMessage = "Teste não enviado: Roblox não estava em primeiro plano."
+                        isTestingKeys = false
+                        return
+                    }
+                    try await KeyboardSimulator.shared.pressChord([key], holdDuration: 0.085)
+                    lastKeysPressed = String(key).uppercased()
+                    try await Task.sleep(nanoseconds: 220_000_000)
+                }
+                statusMessage = "Teste concluído: \(expectedKeys.map { String($0).uppercased() }.joined(separator: ", "))."
+            } catch {
+                statusMessage = "Teste falhou: \(error.localizedDescription)"
+            }
+            isTestingKeys = false
+        }
     }
 
     func cancelCalibration() {
@@ -143,6 +214,9 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
         let sourceID = selectedSourceID
         hits = 0
         visibleNotes = 0
+        capturedUpdates = 0
+        lastKeysPressed = "-"
+        robloxFocused = false
         statusMessage = "Iniciando captura de vídeo..."
 
         Task { [weak self] in
@@ -168,6 +242,10 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
                         Task { @MainActor [weak self] in
                             guard let self, self.sessionID == currentSession else { return }
                             self.visibleNotes = count
+                            self.capturedUpdates += 1
+                            self.robloxFocused = (
+                                NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+                            ).localizedCaseInsensitiveContains("Roblox")
                         }
                     }
                 )
@@ -177,6 +255,9 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
                 }
                 isRunning = true
                 statusMessage = "Capturando. Foque o Roblox para tocar."
+                if autoCalibrateOnStart {
+                    autoCalibrate()
+                }
             } catch {
                 if sessionID == currentSession {
                     statusMessage = "Falha ao capturar: \(error.localizedDescription)"
@@ -191,6 +272,7 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
         sessionID = UUID()
         isRunning = false
         isStarting = false
+        isCalibratingAutomatically = false
         calibrationIndex = nil
         visibleNotes = 0
         statusMessage = "Parado."
@@ -209,7 +291,8 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
         }
 
         hits += keys.count
-        statusMessage = "Notas detectadas: \(hits)"
+        lastKeysPressed = keys.map { String($0).uppercased() }.joined(separator: "+")
+        statusMessage = "Notas acionadas: \(hits) (última tecla: \(lastKeysPressed))."
         let hold = max(0.015, min(0.20, keyHoldMilliseconds / 1000))
         Task {
             do {

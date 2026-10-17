@@ -81,25 +81,44 @@ public enum RhythmInstrument: String, CaseIterable, Identifiable {
     }
 }
 
+public enum RhythmNoteDetectionMode: String, CaseIterable, Identifiable {
+    case hybrid
+    case color
+    case movement
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .hybrid: return "Híbrido (recomendado)"
+        case .color: return "Cor da nota"
+        case .movement: return "Movimento"
+        }
+    }
+}
+
 public struct RhythmVisionSettings: Equatable {
     public var hueDegrees: Double
     public var toleranceDegrees: Double
     public var minimumSaturation: Double
     public var scanDepth: Double
     public var leadPixels: Double
+    public var detectionMode: RhythmNoteDetectionMode
 
     public init(
         hueDegrees: Double = 307,
         toleranceDegrees: Double = 34,
         minimumSaturation: Double = 0.44,
         scanDepth: Double = 0.30,
-        leadPixels: Double = 12
+        leadPixels: Double = 12,
+        detectionMode: RhythmNoteDetectionMode = .hybrid
     ) {
         self.hueDegrees = hueDegrees
         self.toleranceDegrees = toleranceDegrees
         self.minimumSaturation = minimumSaturation
         self.scanDepth = scanDepth
         self.leadPixels = leadPixels
+        self.detectionMode = detectionMode
     }
 }
 
@@ -121,12 +140,14 @@ public final class RhythmVisionDetector {
 
     private var tracks: [[NoteTrack]] = []
     private var lastHitTimes: [TimeInterval] = []
+    private var previousStripPixels: [[UInt32]] = []
 
     public init() { }
 
     public func reset() {
         tracks.removeAll()
         lastHitTimes.removeAll()
+        previousStripPixels.removeAll()
     }
 
     public func analyze(
@@ -145,6 +166,7 @@ public final class RhythmVisionDetector {
         if tracks.count != lanes.count {
             tracks = Array(repeating: [], count: lanes.count)
             lastHitTimes = Array(repeating: -1000, count: lanes.count)
+            previousStripPixels = Array(repeating: [], count: lanes.count)
         }
 
         let laneDistance: Double
@@ -166,6 +188,7 @@ public final class RhythmVisionDetector {
                 height: height,
                 bytesPerRow: bytesPerRow,
                 lane: lane,
+                laneIndex: laneIndex,
                 halfWidth: halfWidth,
                 settings: settings
             )
@@ -232,6 +255,7 @@ public final class RhythmVisionDetector {
         height: Int,
         bytesPerRow: Int,
         lane: RhythmLane,
+        laneIndex: Int,
         halfWidth: Int,
         settings: RhythmVisionSettings
     ) -> [Double] {
@@ -241,32 +265,62 @@ public final class RhythmVisionDetector {
         let endY = min(height - 1, Int((lane.y + 0.030) * Double(height)))
         guard endY > startY else { return [] }
 
-        let sampleStep = 3
-        let samples = stride(from: centerX - halfWidth, through: centerX + halfWidth, by: sampleStep)
-        let sampleCount = (2 * halfWidth) / sampleStep + 1
-        let requiredHits = max(3, Int(Double(sampleCount) * 0.39))
+        let xs = Array(stride(from: centerX - halfWidth, through: centerX + halfWidth, by: 3))
+        let ys = Array(stride(from: startY, through: endY, by: 2))
+        let sampleCount = xs.count
+        let requiredColorHits = max(3, Int(Double(sampleCount) * 0.39))
+        let requiredMovementHits = max(3, Int(Double(sampleCount) * 0.43))
+        let bufferCount = xs.count * ys.count
+
+        var currentPixels = [UInt32](repeating: 0, count: bufferCount)
+        let previousPixels = previousStripPixels[laneIndex]
+        let hasPrevious = previousPixels.count == bufferCount
 
         var bands: [(Int, Int)] = []
         var firstMatchingY: Int?
-        var lastMatchingY: Int = 0
+        var lastMatchingY = 0
         var consecutiveMisses = 0
+        var position = 0
 
-        for y in stride(from: startY, through: endY, by: 2) {
-            var hits = 0
+        for y in ys {
+            var colorHits = 0
+            var movementHits = 0
             let rowOffset = y * bytesPerRow
-            for x in samples {
+            for x in xs {
                 let offset = rowOffset + x * 4
-                if matchesHue(
-                    blue: bgra[offset],
-                    green: bgra[offset + 1],
-                    red: bgra[offset + 2],
-                    settings: settings
-                ) {
-                    hits += 1
+                let blue = bgra[offset]
+                let green = bgra[offset + 1]
+                let red = bgra[offset + 2]
+                let packed = UInt32(red) << 16 | UInt32(green) << 8 | UInt32(blue)
+                currentPixels[position] = packed
+
+                if settings.detectionMode != .movement,
+                   matchesHue(blue: blue, green: green, red: red, settings: settings) {
+                    colorHits += 1
                 }
+
+                if settings.detectionMode != .color, hasPrevious {
+                    let last = previousPixels[position]
+                    let dr = abs(Int(red) - Int((last >> 16) & 255))
+                    let dg = abs(Int(green) - Int((last >> 8) & 255))
+                    let db = abs(Int(blue) - Int(last & 255))
+                    if max(dr, max(dg, db)) >= 34 {
+                        movementHits += 1
+                    }
+                }
+                position += 1
             }
 
-            if hits >= requiredHits {
+            let foundColor = colorHits >= requiredColorHits
+            let foundMovement = movementHits >= requiredMovementHits
+            let matched: Bool
+            switch settings.detectionMode {
+            case .color: matched = foundColor
+            case .movement: matched = foundMovement
+            case .hybrid: matched = foundColor || foundMovement
+            }
+
+            if matched {
                 if firstMatchingY == nil { firstMatchingY = y }
                 lastMatchingY = y
                 consecutiveMisses = 0
@@ -283,7 +337,11 @@ public final class RhythmVisionDetector {
             bands.append((firstMatchingY, lastMatchingY))
         }
 
-        let minimumHeight = max(6, Int(Double(height) * 0.006))
+        previousStripPixels[laneIndex] = currentPixels
+
+        let minimumHeight = settings.detectionMode == .color
+            ? max(6, Int(Double(height) * 0.006))
+            : 4
         let maximumHeight = max(28, Int(Double(height) * 0.15))
         return bands.compactMap { start, end in
             let bandHeight = end - start + 2

@@ -143,6 +143,14 @@ final class RhythmCaptureService {
         processor.update(lanes: lanes, settings: settings)
     }
 
+    /// Solicita um único reconhecimento no próximo frame, sem bloquear a UI.
+    func locateReceivers(
+        keys: [Character],
+        onResult: @escaping ([RhythmLane]?) -> Void
+    ) {
+        processor.requestReceptorLocation(keys: keys, onResult: onResult)
+    }
+
     func stop() async {
         let current = stream
         stream = nil
@@ -167,6 +175,8 @@ private final class RhythmFrameProcessor: NSObject, SCStreamOutput {
     private var onNoteCount: ((Int) -> Void)?
     private var lastPreviewTime: TimeInterval = 0
     private var lastMetricsTime: TimeInterval = 0
+    private var pendingReceptorKeys: [Character]?
+    private var onReceptorLocation: (([RhythmLane]?) -> Void)?
 
     func activate(
         lanes: [RhythmLane],
@@ -184,6 +194,8 @@ private final class RhythmFrameProcessor: NSObject, SCStreamOutput {
             self.onNoteCount = onNoteCount
             self.lastPreviewTime = 0
             self.lastMetricsTime = 0
+            self.pendingReceptorKeys = nil
+            self.onReceptorLocation = nil
             self.active = true
         }
     }
@@ -198,6 +210,16 @@ private final class RhythmFrameProcessor: NSObject, SCStreamOutput {
         }
     }
 
+    func requestReceptorLocation(
+        keys: [Character],
+        onResult: @escaping ([RhythmLane]?) -> Void
+    ) {
+        queue.async {
+            self.pendingReceptorKeys = keys
+            self.onReceptorLocation = onResult
+        }
+    }
+
     func deactivate() {
         queue.async {
             self.active = false
@@ -205,6 +227,8 @@ private final class RhythmFrameProcessor: NSObject, SCStreamOutput {
             self.onPreview = nil
             self.onKeys = nil
             self.onNoteCount = nil
+            self.pendingReceptorKeys = nil
+            self.onReceptorLocation = nil
         }
     }
 
@@ -222,8 +246,22 @@ private final class RhythmFrameProcessor: NSObject, SCStreamOutput {
         let now = ProcessInfo.processInfo.systemUptime
         CVPixelBufferLockBaseAddress(imageBuffer, .readOnly)
         if let baseAddress = CVPixelBufferGetBaseAddress(imageBuffer) {
+            let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
+            if let requestedKeys = pendingReceptorKeys {
+                pendingReceptorKeys = nil
+                let result = RhythmReceptorLocator.locate(
+                    bgra: pixels,
+                    width: CVPixelBufferGetWidth(imageBuffer),
+                    height: CVPixelBufferGetHeight(imageBuffer),
+                    bytesPerRow: CVPixelBufferGetBytesPerRow(imageBuffer),
+                    keys: requestedKeys
+                )
+                onReceptorLocation?(result)
+                onReceptorLocation = nil
+            }
+
             let result = detector.analyze(
-                bgra: baseAddress.assumingMemoryBound(to: UInt8.self),
+                bgra: pixels,
                 width: CVPixelBufferGetWidth(imageBuffer),
                 height: CVPixelBufferGetHeight(imageBuffer),
                 bytesPerRow: CVPixelBufferGetBytesPerRow(imageBuffer),
