@@ -59,7 +59,7 @@ final class RhythmAutoPlayerViewModel: ObservableObject {
             do {
                 let options = try await capture.discoverSources()
                 captureOptions = options
-                if !options.contains(where: { $0.id == selectedSourceID }) {
+                if !options.contains(where: { $0.id == self.selectedSourceID }) {
                     selectedSourceID = options.first?.id ?? ""
                 }
                 statusMessage = options.isEmpty
